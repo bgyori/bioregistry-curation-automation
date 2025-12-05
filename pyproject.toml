@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bioregistry_curator"
+dynamic = ["version"]
+description = "Bioregistry AI-assisted curation tool"
+readme = {file = "README.md", content-type = "text/markdown"}
+requires-python = ">=3.9"
+license = {text = "BSD-2-Clause"}
+authors = [
+    {name = "Benjamin M. Gyori, Northeastern University", email = "b.gyori@northeastern.edu"}
+    {name = "Oscar Ji, Northeastern University", email = "ji.kang@northeastern.edu"}
+]
+keywords = ["bioregistry"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "flask",
+    "indra",
+    "browser-use==0.10.1",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[tool.setuptools]
+packages = {find = {}}
+include-package-data = true

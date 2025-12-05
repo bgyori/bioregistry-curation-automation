@@ -1,4 +1,0 @@
-flask
-indra
-browser-use==0.10.1
-playwright
