@@ -1,37 +1,5 @@
 # Bioregistry Curation Automation
 
-Minimal Flask application to extract PubMed metadata for a PMID, scrape a database homepage using `browser-use`, and produce an editable Bioregistry-style JSON output.
-
-Requirements
-- Python 3.8+
-- see `requirements.txt` for Python dependencies
-
-Quick setup
-
-1. Create a virtual environment and install dependencies:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-2. Run the app:
-
-```bash
-python app.py
-# then open http://127.0.0.1:5000
-```
-
-Notes
-- The backend uses INDRA to fetch PubMed metadata (`pip install indra`).
-- The database scraping uses `browser-use` via an async Agent (the exact provided scraping function is used).
-- The frontend is a simple single-page app (`templates/index.html`) with vanilla JS in `static/script.js`.
-
-Security & Usage
-- This is a minimal demo. Be cautious when running automated web agents against external sites; ensure you respect robots.txt and the site's terms of service.
-# Bioregistry Curation Automation
-
 An automated pipeline for streamlining the Bioregistry curation process by extracting metadata from PubMed articles and database websites, generating standardized JSON output for registry entries.
 
 ## Overview
@@ -55,7 +23,7 @@ The pipeline automatically extracts:
 - DOI
 - Database description
 - Database URL
-- Year publicated
+- Year published
 
 ### 3. Database Scraping
 Using browser automation (browser-use), the tool:
@@ -65,7 +33,7 @@ Using browser automation (browser-use), the tool:
   - ID patterns/regex
   - Example identifiers
   - Additional metadata fields
-  - uri format
+  - URI format
 
 ### 4. JSON Generation
 Outputs a properly formatted JSON file following Bioregistry schema specifications.
@@ -77,10 +45,45 @@ Provides an editable interface where curators can:
 - Add missing metadata
 - Validate before final submission
 
+## Requirements
+
+- Python 3.9+
+- Dependencies are managed via `pyproject.toml`
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/kanghosaeyo/bioregistry-curation-automation.git
+cd bioregistry-curation-automation
+```
+
+2. Create and activate a virtual environment:
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
+
+3. Install the package in editable mode:
+```bash
+pip install -e .
+```
+
+## Usage
+
+Run the Flask application:
+```bash
+cd src
+python -m bioregistry_curator.app
+```
+
+Then open http://127.0.0.1:5001 in your browser.
+
 ## Technology Stack
 
-- **Frontend**: Web interface for input and editing
-- **INDRA API**: PubMed Metadata extraction (https://indra.readthedocs.io/en/latest/modules/literature/index.html#module-indra.literature.pubmed_client)
+- **Backend**: Flask web framework
+- **Frontend**: Vanilla JavaScript with HTML/CSS
+- **INDRA API**: PubMed metadata extraction ([documentation](https://indra.readthedocs.io/en/latest/modules/literature/index.html#module-indra.literature.pubmed_client))
 - **Browser Automation**: browser-use for dynamic content scraping
 - **Output Format**: JSON (Bioregistry schema compliant)
 
@@ -91,6 +94,11 @@ Provides an editable interface where curators can:
 - Standardize the curation workflow
 - Maintain curator oversight through review interface
 
+## Security & Usage Notes
+
+- This is a research tool. Be cautious when running automated web agents against external sites.
+- Ensure you respect robots.txt and the site's terms of service.
+- Review all automated extractions before submitting to Bioregistry.
 
 ## Development Status
 
@@ -108,3 +116,7 @@ This is a personal project for automating Bioregistry curation workflows. If you
 ## Author
 
 Oscar Kangho Ji - Bioregistry Curator, Gyori Lab for Computational Biomedicine, Northeastern University
+
+## License
+
+BSD-2-Clause
