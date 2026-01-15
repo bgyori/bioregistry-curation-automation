@@ -2,6 +2,9 @@ from flask import Flask, request, jsonify, render_template
 import re
 import asyncio
 import logging
+from dotenv import load_dotenv
+
+load_dotenv() 
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -96,29 +99,138 @@ async def extract_database_info(homepage_url):
     agent = Agent(
         task=rf"""Visit {homepage_url} and extract database information.
 
-Your task is to find and return EXACTLY these 8 fields in this exact format:
+Your task is to find and return EXACTLY these 10 fields in this exact format:
 
-Name: [short database name/acronym]
-Description: [one sentence starting with "Identifiers correspond to..." or "Identifiers represent..."]
-Homepage: [main URL]
-Example: [ONE example identifier from the database, like "FG123" or "12345"]
-Pattern: [regex pattern for identifiers, like ^FG\d{{3}}$ or ^\d{{5}}$]
-URI_Format: [URL pattern with $1 placeholder, like http://example.com/entry?id=$1]
-Contact_Name: [full name of primary contact/author]
-Contact_Email: [contact email address]
+Name: [full database name]
+Prefix: [short database acronym/abbreviation]
+Description: [one sentence describing what identifiers represent]
+Homepage: [main URL of the database]
+Example: [ONE typical identifier example, like "ABC123" or "12345"]
+Pattern: [regex pattern for identifiers, like ^[A-Z]{{3}}\d{{3}}$ or ^\d{{5}}$]
+URI_Format: [URL pattern with $1 as placeholder for ID, like https://example.com/entry/$1]
+Contact_Name: [full name of contact person]
+Contact_Email: [email address]
+Keywords: [exactly 3 scientific terms separated by commas]
 
 CRITICAL INSTRUCTIONS:
-1. For Name: Use the short acronym/name, not the full title
-2. For Description: Must start with "Identifiers correspond to" or "Identifiers represent"
-3. For Example: Look for example IDs in the database interface, search forms, or help pages
-4. For Pattern: Infer from example IDs if not explicitly stated (e.g., if examples are FG001, FG002 → ^FG\d{{3}}$)
-5. For URI_Format: Look for entry/detail page URLs and replace the ID with $1
-6. For Contact: Look in About, Contact, or footer sections
-7. If you can't find a field, leave it empty but still include the label
 
-Navigate through multiple pages if needed (About, Help, Search, Browse pages) to find all information.
+1. Name: Use the FULL official database name (e.g., "Minimum Information about a Biosynthetic Gene Cluster", "Kyoto Encyclopedia of Genes and Genomes")
 
-Return ONLY these 8 lines, nothing else. No explanations, no JSON, no markdown.""",
+2. Prefix: Use the SHORT acronym/abbreviation in lowercase (e.g., "mibig", "kegg", "absd")
+
+3. Description: Focus on the SEMANTIC SPACE, not the database itself. Answer these two questions in ONE concise sentence:
+   - What kind of entities are covered? (e.g., proteins, small molecules, diseases, genes, gene clusters)
+   - Why do these entities exist / what are they used for? (e.g., for comparative analysis, drug discovery, annotation)
+   
+   Examples of GOOD descriptions:
+   - "Biosynthetic gene clusters producing specialized metabolites for comparative genomics analysis"
+   - "Small molecules with published biochemical activity data for drug discovery"
+   - "Antibody protein sequences with structural annotations for immune repertoire studies"
+   
+   Examples of BAD descriptions:
+   - "A comprehensive database that provides..." (focuses on database, not entities)
+   - "This resource was created to store..." (focuses on database purpose, not entity purpose)
+   
+   Keep it to ONE sentence. Focus on what the IDENTIFIERS represent and their purpose.
+
+4. Example: Find ONE CANONICAL identifier in its BASE format (no version suffixes, no query parameters).
+   - Look in: Search results, browse pages, documentation, example queries
+   - If you see "BGC0000001.5" or "ABC123_v2", use the BASE form: "BGC0000001" or "ABC123"
+   - If you see "?id=12345" in a URL, use just: "12345"
+   - Use the SIMPLEST, most common format without versions, extensions, or parameters
+   DO NOT include version numbers, file extensions, or URL parameters in the example.
+
+5. Pattern: Create regex for the BASE identifier format (without versions or suffixes):
+   - Match the example you provided exactly
+   - If example is "BGC0000001": ^BGC\d{{7}}$ (not ^BGC\d{{7}}\.\d$)
+   - If example is "ABC123": ^[A-Z]{{3}}\d{{3}}$
+   - If example is "12345": ^\d{{5}}$
+   - DO NOT include version patterns like \.\d or _v\d in the regex
+
+6. URI_Format: Find the URL pattern that takes you to INDIVIDUAL ENTRIES (one identifier at a time).
+   
+   IMPORTANT: The URI_Format must be for viewing ONE SPECIFIC ENTRY, not:
+   - Search pages (even if they show results for an ID)
+   - List/browse pages showing multiple entries
+   - Download pages or API endpoints
+   
+   You need the URL that displays the DETAILS/INFORMATION for a single identifier.
+   
+   Method 1 (STRONGLY PREFERRED): Extract link URLs before clicking
+   - Navigate to search results, browse page, or dataset listing
+   - Find clickable links to individual entry DETAIL pages
+   - These links often say: "View details", "View entry", or just show the ID as a link
+   - Inspect or hover over these links to see their href/URL
+   - Compare 2-3 entry links to identify the pattern
+   
+   Example:
+   - On browse page, you see links:
+     <a href="/go/BGC0000001">View entry</a>
+     <a href="/go/BGC0000002">View entry</a>
+   - Pattern identified: https://mibig.secondarymetabolites.org/go/$1
+   
+   Method 2: Look for "Share", "Cite", or "Permalink" features
+   - Navigate to an entry detail page
+   - Find buttons labeled: "Share", "Permalink", "Cite this entry"
+   - Copy the URL provided there
+   
+   Method 3 (Last resort): Use address bar after navigating to entries
+   
+   CRITICAL - VERIFY YOUR URI_FORMAT:
+   After identifying the pattern, TEST IT:
+   1. Take your pattern (e.g., https://example.com/go/$1)
+   2. Replace $1 with a DIFFERENT example ID you found
+   3. Navigate directly to that URL by typing it in the address bar
+   4. Confirm it takes you to that entry's detail page
+   5. If it works: use this pattern ✓
+   6. If it fails (404 or wrong page): try Method 2 or find the correct pattern
+   
+   Example verification:
+   - Pattern found: https://mibig.secondarymetabolites.org/go/$1
+   - Test with ID "BGC0000005": Navigate to https://mibig.secondarymetabolites.org/go/BGC0000005
+   - Does it show BGC0000005's detail page? YES → Pattern is correct ✓
+   
+   Only return a URI_Format that you have successfully tested and verified works.
+   
+   Format: Full URL with $1 as placeholder
+   Example: https://example.com/go/$1
+
+7. Contact: Search thoroughly in these locations (in order):
+   - About page (look for "Principal Investigator", "Project Lead", "Contact")
+   - Contact page
+   - Team page (choose the PRIMARY contact or PI)
+   - Footer (sometimes shows maintainer email)
+   - GitHub repository if linked (check README for maintainer)
+   
+   If multiple contacts exist, prioritize: PI > Lead Developer > Maintainer > General contact
+
+8. Keywords: Extract EXACTLY 3 lowercase terms that describe the semantic space. Include:
+   - Entity type: what the identifiers represent (e.g., "biosynthetic gene clusters", "protein sequences", "small molecules")
+   - Scientific domain: the field (e.g., "genomics", "biochemistry", "immunology")
+   - Application or context: what they're used for (e.g., "secondary metabolites", "drug discovery", "comparative analysis")
+   
+   Guidelines:
+   - Use lowercase only
+   - Spaces allowed in multi-word phrases (e.g., "gene clusters")
+   - NO generic database terms ("database", "resource", "tool", "collection", "platform", "data")
+   - NO generic adjectives ("comprehensive", "curated", "large", "public")
+   - Focus on WHAT the entities are, not HOW the database is organized
+   
+   Examples:
+   - GOOD: "biosynthetic gene clusters, secondary metabolites, genomics"
+   - GOOD: "small molecules, biochemistry, drug discovery"
+   - BAD: "database, comprehensive resource, curated data"
+
+9. If you cannot find a field after checking multiple pages (Home, About, Search, Contact, Browse), leave it EMPTY but include the label.
+
+NAVIGATION STRATEGY:
+1. Start at homepage
+2. Go to About/Documentation (for Name, Description, Contact)
+3. Go to Search/Browse pages (for Example, URI_Format)
+4. Click 1-2 entries (for Pattern verification, but use link URLs from step 3 for URI_Format)
+5. Check Contact/Team pages (for Contact info)
+
+Return ONLY these 10 lines in the exact format shown above. No extra text, no JSON, no markdown formatting.""",
         llm_model="gpt-4o",
     )
 
@@ -133,8 +245,9 @@ Return ONLY these 8 lines, nothing else. No explanations, no JSON, no markdown."
 
     # Parse line by line
     extracted = {
-        'name': '', 'description': '', 'homepage': '', 'example': '',
-        'pattern': '', 'uri_format': '', 'contact_name': '', 'contact_email': ''
+        'name': '', 'prefix': '', 'description': '', 'homepage': '', 'example': '',
+        'pattern': '', 'uri_format': '', 'contact_name': '', 'contact_email': '',
+        'keywords': []
     }
 
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
@@ -150,6 +263,8 @@ Return ONLY these 8 lines, nothing else. No explanations, no JSON, no markdown."
         
         if label_norm == 'name':
             extracted['name'] = val
+        elif label_norm == 'prefix':
+            extracted['prefix'] = val.lower()  # Ensure lowercase
         elif label_norm == 'description':
             extracted['description'] = val
         elif label_norm == 'homepage':
@@ -165,20 +280,20 @@ Return ONLY these 8 lines, nothing else. No explanations, no JSON, no markdown."
             extracted['contact_name'] = val
         elif label_norm == 'contact_email':
             extracted['contact_email'] = val
+        elif label_norm == 'keywords':
+            # Parse comma-separated keywords
+            extracted['keywords'] = [kw.strip() for kw in val.split(',') if kw.strip()][:3]
 
     # Post-processing: Try to extract email from contact name if email is empty
     if not extracted['contact_email'] and extracted['contact_name']:
-        # Sometimes email is included in parentheses in the name
         email_match = re.search(r'([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})', extracted['contact_name'])
         if email_match:
             extracted['contact_email'] = email_match.group(1)
-            # Remove email from name
             extracted['contact_name'] = re.sub(r'\s*[\(\[]?[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}[\)\]]?\s*', '', extracted['contact_name']).strip()
 
     # If pattern is empty but we have an example, try to infer pattern
     if not extracted['pattern'] and extracted['example']:
         example = extracted['example']
-        # Simple pattern inference
         if re.match(r'^[A-Z]+\d+$', example):
             letters = re.match(r'^([A-Z]+)', example).group(1)
             digits = len(re.findall(r'\d', example))
@@ -191,20 +306,33 @@ Return ONLY these 8 lines, nothing else. No explanations, no JSON, no markdown."
     if not extracted['homepage']:
         extracted['homepage'] = homepage_url
 
-    # If description doesn't start correctly, try to format it
-    if extracted['description'] and not extracted['description'].lower().startswith(('identifiers correspond', 'identifiers represent')):
-        db_name = extracted['name'] or 'this database'
-        extracted['description'] = f"Identifiers correspond to entries in the {db_name} database. {extracted['description']}"
+    # Derive prefix from name if not provided
+    if not extracted['prefix'] and extracted['name']:
+        # Simple derivation: get first letters of each word
+        words = extracted['name'].split()
+        extracted['prefix'] = ''.join([w[0] for w in words if w]).lower()
 
-    logging.info(f"Extracted - Name: {extracted['name']}, Example: {extracted['example']}, Pattern: {extracted['pattern']}")
+    # Log warnings for URI_format issues
+    if extracted['uri_format']:
+        uri = extracted['uri_format']
+        if '/index.html' in uri or '/default.html' in uri:
+            logging.warning(f"⚠️  URI format contains index.html: {uri}")
+            logging.warning("   This may indicate a post-redirect URL. Verify this is the entry point.")
+        if uri.count('/') > 4:
+            logging.warning(f"⚠️  URI format has deep nesting: {uri}")
+            logging.warning("   This may indicate a post-redirect URL. Check if a simpler URL exists.")
+
+    logging.info(f"Extracted - Name: {extracted['name']}, Prefix: {extracted['prefix']}, Keywords: {extracted['keywords']}")
 
     return {
         "name": extracted['name'],
+        "prefix": extracted['prefix'],
         "description": extracted['description'],
         "homepage": extracted['homepage'],
         "example": extracted['example'],
         "pattern": extracted['pattern'],
         "uri_format": extracted['uri_format'],
+        "keywords": extracted['keywords'],
         "contact": {
             "email": extracted['contact_email'],
             "name": extracted['contact_name'],
@@ -213,33 +341,11 @@ Return ONLY these 8 lines, nothing else. No explanations, no JSON, no markdown."
     }
 
 
-def _keywords_from_text(text, max_k=3):
-    """Extract keywords from text as a fallback."""
-    if not text:
-        return []
-    text = re.sub(r"[^a-zA-Z0-9\s]", " ", text).lower()
-    words = text.split()
-    stop = set(["the","and","for","with","that","this","from","are","was","were","using","use","data","database","resource","repository"])
-    candidates = [w for w in words if len(w) > 5 and w not in stop]
-    seen = []
-    for w in candidates:
-        if w not in seen:
-            seen.append(w)
-        if len(seen) >= max_k:
-            break
-    return seen
-
-
 def format_bioregistry_json(pubmed, db, contributor=None):
-    """Format the final Bioregistry JSON output.
-
-    Args:
-        pubmed: PubMed metadata dictionary
-        db: Database information dictionary
-        contributor: Optional contributor info dictionary with keys: name, email, orcid, github
-    """
-    # Get name from db data
+    """Format the final Bioregistry JSON output."""
+    # Get name and prefix from db data
     name = (db.get("name") if db else "").strip()
+    prefix = (db.get("prefix") if db else "").strip()
 
     # If no name, derive from homepage
     if not name:
@@ -247,11 +353,15 @@ def format_bioregistry_json(pubmed, db, contributor=None):
         m = re.search(r"https?://(?:www\.)?([^/\.]+)", homepage)
         name = m.group(1) if m else "database"
 
-    # Remove version suffixes from name
-    name = re.sub(r"(?i)\s*(?:v|version)\s*\d+(?:\.\d+)*$", "", name).strip()
+    # If no prefix, derive from name
+    if not prefix:
+        # Remove version suffixes from name first
+        clean_name = re.sub(r"(?i)\s*(?:v|version)\s*\d+(?:\.\d+)*$", "", name).strip()
+        # Create prefix from clean name (alphanumeric only, lowercase)
+        prefix = re.sub(r"[^0-9a-zA-Z]+", "", clean_name).lower() or "database_key"
 
-    # Create clean database key (alphanumeric only, lowercase)
-    db_key = re.sub(r"[^0-9a-zA-Z]+", "", name).lower() or "database_key"
+    # Use prefix as database key
+    db_key = prefix
 
     # Extract contact info from db
     contact = {"email": "", "name": "", "orcid": ""}
@@ -262,7 +372,7 @@ def format_bioregistry_json(pubmed, db, contributor=None):
             contact["name"] = contact_raw.get("name", "")
             contact["orcid"] = contact_raw.get("orcid", "")
 
-    # Build contributor info from provided data
+    # Build contributor info
     contributor_info = {"email": "", "github": "", "name": "", "orcid": ""}
     if contributor and isinstance(contributor, dict):
         contributor_info["name"] = contributor.get("name", "") or ""
@@ -277,12 +387,17 @@ def format_bioregistry_json(pubmed, db, contributor=None):
     pattern = (db.get("pattern") if db else "")
     uri_format = (db.get("uri_format") if db else "")
 
-    # Get keywords from INDRA or fallback to abstract extraction
+    # Get keywords - priority: INDRA > browser-use
     keywords = []
     if pubmed and pubmed.get('keywords'):
         keywords = pubmed.get('keywords')
+        logging.info("Using keywords from PubMed/INDRA")
+    elif db and db.get('keywords'):
+        keywords = db.get('keywords')
+        logging.info("Using keywords from browser-use")
     else:
-        keywords = _keywords_from_text(pubmed.get("abstract", "") if pubmed else "")
+        keywords = []
+        logging.warning("No keywords available from INDRA or browser-use")
 
     # Build publications list
     publications = []
@@ -347,7 +462,6 @@ def extract():
         urls = [re.sub(r"[\.,;:]+$", "", u) for u in raw_urls]
 
         if not urls:
-            # No URL to scrape — return error with publication-only data
             logging.warning("No homepage URL found in abstract")
             bioreg_partial = format_bioregistry_json(pubmed, None, contributor)
             return jsonify({
@@ -365,7 +479,7 @@ def extract():
         try:
             db_data = asyncio.run(extract_database_info(homepage_url))
             logging.info("Browser scraping completed successfully")
-            logging.info(f"Extracted data - Name: {db_data.get('name', 'N/A')}, Example: {db_data.get('example', 'N/A')}")
+            logging.info(f"Extracted data - Name: {db_data.get('name', 'N/A')}, Prefix: {db_data.get('prefix', 'N/A')}, Keywords: {db_data.get('keywords', [])}")
         except Exception as e:
             logging.exception('Database scraping failed')
             bioreg_partial = format_bioregistry_json(pubmed, None, contributor)

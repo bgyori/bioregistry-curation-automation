@@ -47,7 +47,7 @@ Provides an editable interface where curators can:
 
 ## Requirements
 
-- **Python 3.9-3.12** (Python 3.13 not yet supported due to scipy compatibility issues)
+- **Python 3.9+**
 - Dependencies are managed via `pyproject.toml`
 
 ## Installation
@@ -60,8 +60,7 @@ cd bioregistry-curation-automation
 
 2. Create and activate a virtual environment:
 ```bash
-# Use Python 3.11 or 3.12 (recommended: 3.11)
-python3.11 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
@@ -69,13 +68,6 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```bash
 pip install -e .
 ```
-
-### Troubleshooting Installation
-
-If you experience slow imports or timeout errors with scikit-learn:
-- Ensure you're using Python 3.11 or 3.12 (not 3.13)
-- Install with binary wheels: `pip install --only-binary :all: numpy scipy scikit-learn`
-  
 
 ## Usage
 

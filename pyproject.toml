@@ -27,6 +27,7 @@ dependencies = [
     "flask",
     "indra",
     "browser-use",
+    "dotenv",
 ]
 
 [project.optional-dependencies]
