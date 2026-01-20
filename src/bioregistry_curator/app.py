@@ -99,138 +99,239 @@ async def extract_database_info(homepage_url):
     agent = Agent(
         task=rf"""Visit {homepage_url} and extract database information.
 
-Your task is to find and return EXACTLY these 10 fields in this exact format:
+DO NOT USE REGISTRY SITES: Avoid bioregistry.io, biopragmatics.github.io, identifiers.org. Use primary sources only.
 
-Name: [full database name]
-Prefix: [short database acronym/abbreviation]
-Description: [one sentence describing what identifiers represent]
-Homepage: [main URL of the database]
-Example: [ONE typical identifier example, like "ABC123" or "12345"]
-Pattern: [regex pattern for identifiers, like ^[A-Z]{{3}}\d{{3}}$ or ^\d{{5}}$]
-URI_Format: [URL pattern with $1 as placeholder for ID, like https://example.com/entry/$1]
-Contact_Name: [full name of contact person]
+CRITICAL: Extract only observed data - never invent or guess - use EMPTY if not found.
+
+Return EXACTLY these 10 fields:
+
+Name: [full official database name - the acronym expansion]
+Prefix: [short acronym in lowercase, only alphabet]
+Description: [one sentence describing what identifiers represent and their purpose]
+Example: [one typical identifier, base format without versions]
+Pattern: [regex pattern matching the identifier format]
+URI_Format: [URL pattern with $1 as ID placeholder]
+Contact_Name: [contact person full name]
 Contact_Email: [email address]
-Keywords: [exactly 3 scientific terms separated by commas]
+Contact_Orcid: [orcid]
+Keywords: [exactly 3 lowercase scientific terms, comma-separated]
 
-CRITICAL INSTRUCTIONS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. Name: Use the FULL official database name (e.g., "Minimum Information about a Biosynthetic Gene Cluster", "Kyoto Encyclopedia of Genes and Genomes")
+EXTRACTION GUIDE
 
-2. Prefix: Use the SHORT acronym/abbreviation in lowercase (e.g., "mibig", "kegg", "absd")
+1. NAME - Official Acronym Expansion
 
-3. Description: Focus on the SEMANTIC SPACE, not the database itself. Answer these two questions in ONE concise sentence:
-   - What kind of entities are covered? (e.g., proteins, small molecules, diseases, genes, gene clusters)
-   - Why do these entities exist / what are they used for? (e.g., for comparative analysis, drug discovery, annotation)
-   
-   Examples of GOOD descriptions:
-   - "Biosynthetic gene clusters producing specialized metabolites for comparative genomics analysis"
-   - "Small molecules with published biochemical activity data for drug discovery"
-   - "Antibody protein sequences with structural annotations for immune repertoire studies"
-   
-   Examples of BAD descriptions:
-   - "A comprehensive database that provides..." (focuses on database, not entities)
-   - "This resource was created to store..." (focuses on database purpose, not entity purpose)
-   
-   Keep it to ONE sentence. Focus on what the IDENTIFIERS represent and their purpose.
+Check: Publications (abstract/intro), About page, homepage header, documentation
+Look for: "[Full Name] ([ACRONYM])" or "[ACRONYM] stands for [Full Name]"
 
-4. Example: Find ONE CANONICAL identifier in its BASE format (no version suffixes, no query parameters).
-   - Look in: Search results, browse pages, documentation, example queries
-   - If you see "BGC0000001.5" or "ABC123_v2", use the BASE form: "BGC0000001" or "ABC123"
-   - If you see "?id=12345" in a URL, use just: "12345"
-   - Use the SIMPLEST, most common format without versions, extensions, or parameters
-   DO NOT include version numbers, file extensions, or URL parameters in the example.
+Priority:
+1. Official expansion (e.g., "PSSKB" → "Protein Structure and Stability Knowledge Base")
+2. If no expansion found, use acronym (e.g., "RiboCirc")
 
-5. Pattern: Create regex for the BASE identifier format (without versions or suffixes):
-   - Match the example you provided exactly
-   - If example is "BGC0000001": ^BGC\d{{7}}$ (not ^BGC\d{{7}}\.\d$)
-   - If example is "ABC123": ^[A-Z]{{3}}\d{{3}}$
-   - If example is "12345": ^\d{{5}}$
-   - DO NOT include version patterns like \.\d or _v\d in the regex
+Clean the name:
+- Strip versions: "DATA 3.0" → "DATA"
+- Remove suffixes: "PDB (updated)" → "PDB", "GenBank-nr" → "GenBank"
+- Keep core acronym: no numbers, "v[X]", years, "-[suffix]"
 
-6. URI_Format: Find the URL pattern that takes you to INDIVIDUAL ENTRIES (one identifier at a time).
-   
-   IMPORTANT: The URI_Format must be for viewing ONE SPECIFIC ENTRY, not:
-   - Search pages (even if they show results for an ID)
-   - List/browse pages showing multiple entries
-   - Download pages or API endpoints
-   
-   You need the URL that displays the DETAILS/INFORMATION for a single identifier.
-   
-   Method 1 (STRONGLY PREFERRED): Extract link URLs before clicking
-   - Navigate to search results, browse page, or dataset listing
-   - Find clickable links to individual entry DETAIL pages
-   - These links often say: "View details", "View entry", or just show the ID as a link
-   - Inspect or hover over these links to see their href/URL
-   - Compare 2-3 entry links to identify the pattern
-   
-   Example:
-   - On browse page, you see links:
-     <a href="/go/BGC0000001">View entry</a>
-     <a href="/go/BGC0000002">View entry</a>
-   - Pattern identified: https://mibig.secondarymetabolites.org/go/$1
-   
-   Method 2: Look for "Share", "Cite", or "Permalink" features
-   - Navigate to an entry detail page
-   - Find buttons labeled: "Share", "Permalink", "Cite this entry"
-   - Copy the URL provided there
-   
-   Method 3 (Last resort): Use address bar after navigating to entries
-   
-   CRITICAL - VERIFY YOUR URI_FORMAT:
-   After identifying the pattern, TEST IT:
-   1. Take your pattern (e.g., https://example.com/go/$1)
-   2. Replace $1 with a DIFFERENT example ID you found
-   3. Navigate directly to that URL by typing it in the address bar
-   4. Confirm it takes you to that entry's detail page
-   5. If it works: use this pattern ✓
-   6. If it fails (404 or wrong page): try Method 2 or find the correct pattern
-   
-   Example verification:
-   - Pattern found: https://mibig.secondarymetabolites.org/go/$1
-   - Test with ID "BGC0000005": Navigate to https://mibig.secondarymetabolites.org/go/BGC0000005
-   - Does it show BGC0000005's detail page? YES → Pattern is correct ✓
-   
-   Only return a URI_Format that you have successfully tested and verified works.
-   
-   Format: Full URL with $1 as placeholder
-   Example: https://example.com/go/$1
+Examples:
+✓ "Protein Structure and Stability Knowledge Base"
+✓ "RiboCirc"
+✗ "comprehensive database of translatable circRNAs" (description, not name)
 
-7. Contact: Search thoroughly in these locations (in order):
-   - About page (look for "Principal Investigator", "Project Lead", "Contact")
-   - Contact page
-   - Team page (choose the PRIMARY contact or PI)
-   - Footer (sometimes shows maintainer email)
-   - GitHub repository if linked (check README for maintainer)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2. DESCRIPTION - What identifiers represent and why
+
+Format: "Identifiers correspond to [entities] for [purpose]"
+
+Required: Entity type + Purpose/use case
+Focus: What the IDs represent, not the database itself
+
+Examples:
+✓ "Identifiers correspond to biosynthetic gene clusters producing specialized metabolites for comparative genomics analysis"
+✓ "Identifiers correspond to small molecules with biochemical activity data for drug discovery"
+✗ "ChEMBL is a database created in 2009" (database history, not identifier purpose)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3. EXAMPLE - One canonical identifier (base format)
+
+Source: Extract from entry URLs when finding URI_Format
+- URLs: /browse/RCDDd001, /browse/RCDDd002 → Use "RCDDd001"
+
+Base format only:
+- "BGC0000001.5" → Use "BGC0000001"
+- "?id=12345" → Use "12345"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4. PATTERN - Regex for identifier format
+
+WORKFLOW:
+a) Extract IDs from entry URLs on browse page
+b) Collect 3-5 different example IDs
+c) Check total entry count for digit range
+d) Build pattern supporting full range
+
+Example:
+- URLs: /browse/RCDDd001, /browse/RCDDd002, /browse/RCDDd003
+- Total entries: 1108
+- Pattern needs: ^RCDD[di]\d{1,4}$ (not \d{3})
+
+Handle variable formats:
+- If seeing: /entry/7O1K_A AND /entry/3CIA_D308_D388
+- Pattern: ^[A-Z0-9]{4}_[A-Z](\d+_[A-Z]\d+)?$
+
+No version patterns (\.\d or _v\d)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5. URI_FORMAT - URL to individual entries
+
+5. URI_FORMAT - URL to individual entries
+
+ABSOLUTE RULE: Only extract patterns from OBSERVED clickable links.
+NEVER construct or guess URL patterns.
+
+METHOD:
+1. Navigate to Browse/Database → Wait 10s → Scroll
+2. When table loads, inspect for clickable links:
    
-   If multiple contacts exist, prioritize: PI > Lead Developer > Maintainer > General contact
+   CHECK IN THIS ORDER:
+   a) ID column: Look for <a> tags (will be indexed as clickable)
+   b) Action columns: "View", "Details", "More", "Info" buttons
+   c) Table row: Click entry, wait 10s, check if:
+      - URL changed (extract new URL as pattern)
+      - Detail panel appeared (no stable URI → EMPTY)
+      - Nothing happened (no stable URI → EMPTY)
 
-8. Keywords: Extract EXACTLY 3 lowercase terms that describe the semantic space. Include:
-   - Entity type: what the identifiers represent (e.g., "biosynthetic gene clusters", "protein sequences", "small molecules")
-   - Scientific domain: the field (e.g., "genomics", "biochemistry", "immunology")
-   - Application or context: what they're used for (e.g., "secondary metabolites", "drug discovery", "comparative analysis")
-   
-   Guidelines:
-   - Use lowercase only
-   - Spaces allowed in multi-word phrases (e.g., "gene clusters")
-   - NO generic database terms ("database", "resource", "tool", "collection", "platform", "data")
-   - NO generic adjectives ("comprehensive", "curated", "large", "public")
-   - Focus on WHAT the entities are, not HOW the database is organized
-   
-   Examples:
-   - GOOD: "biosynthetic gene clusters, secondary metabolites, genomics"
-   - GOOD: "small molecules, biochemistry, drug discovery"
-   - BAD: "database, comprehensive resource, curated data"
+3. If you find clickable <a> tag with href:
+   - Click it → Note URL that loads
+   - Extract pattern, replace ID with $1
+   - Navigate to URL with 2nd Example ID
+   - Confirm page loads successfully
+   - Output verified pattern
 
-9. If you cannot find a field after checking multiple pages (Home, About, Search, Contact, Browse), leave it EMPTY but include the label.
+4. If NO clickable links found:
+   - Use `evaluate` to inspect table cell HTML
+   - Look for href attributes in parent elements
+   - Check for data-url or data-link attributes
+   - If still no links found → Mark EMPTY
 
-NAVIGATION STRATEGY:
-1. Start at homepage
-2. Go to About/Documentation (for Name, Description, Contact)
-3. Go to Search/Browse pages (for Example, URI_Format)
-4. Click 1-2 entries (for Pattern verification, but use link URLs from step 3 for URI_Format)
-5. Check Contact/Team pages (for Contact info)
+VERIFICATION CHECKLIST (must complete before marking EMPTY):
+□ Checked ID column for <a> tags
+□ Checked all action columns for links/buttons
+□ Clicked 3+ different entries to test behavior
+□ Used `evaluate` to inspect table HTML for hidden hrefs
+□ Scrolled entire table to check for link variations
+□ Checked Tutorial/FAQ for documented URL structure
 
-Return ONLY these 10 lines in the exact format shown above. No extra text, no JSON, no markdown formatting.""",
+CRITICAL - WHEN TO MARK EMPTY:
+✓ If clicking entry loads details but URL stays same → EMPTY
+✓ If clicking entry does nothing → EMPTY
+✓ If no <a> tags found anywhere in table → EMPTY
+✓ If Tutorial/FAQ show no entry URL format → EMPTY
+
+FORBIDDEN:
+✗ NEVER test URLs like /details/$1 or /entry/$1 without observing them
+✗ NEVER assume common patterns exist
+✗ If you're typing a URL in navigate that you haven't seen → STOP
+
+Format: Full URL with $1 placeholder (only if observed and verified)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+6. CONTACT - Find contact person
+
+Primary sources: About, Contact, Team pages, Footer, GitHub
+Prioritize: PI > Lead Developer > Corresponding Author
+
+ORCID search required:
+If contact name found but no ORCID on site → Search externally:
+- "[Contact Name] [Email] ORCID"
+- "[Contact Name] [Institution] ORCID"
+Check: ORCID.org, Google Scholar, PubMed, university pages
+
+Only mark Contact_Orcid EMPTY after external search fails.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+7. KEYWORDS - 3 specific scientific terms
+
+Include: Entity type + Scientific domain + Application
+Lowercase, spaces allowed
+
+Examples:
+✓ "biosynthetic gene clusters, secondary metabolites, genomics"
+✗ "database, comprehensive, curated" (too generic)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+NAVIGATION STRATEGY
+
+1. Homepage → About/Docs (Name, Description, Contact)
+2. Browse/Search → Entry links (Example, Pattern, URI_Format)
+3. Verify URI_Format by testing with multiple IDs
+4. Publications/External search (ORCID if not found)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PERSISTENCE REQUIREMENTS (CRITICAL - READ CAREFULLY)
+
+SPAs are slow - DO NOT give up easily:
+
+FOR EVERY PAGE THAT APPEARS BLANK:
+1. Wait 10 seconds (not 3-5)
+2. Scroll down to bottom
+3. Scroll back to top
+4. Wait another 5 seconds
+5. Refresh page
+6. Repeat steps 1-5 at least 3 times
+
+"Page readiness timeout" warnings are NORMAL - ignore them and keep trying.
+
+BEFORE marking Example/Pattern/URI_Format as EMPTY, you MUST:
+
+□ Try Browse page: 3+ refresh cycles (wait, scroll, refresh)
+□ Try Search page: 3+ refresh cycles
+□ Try Tutorial/FAQ/Documentation pages
+□ Search with Example ID from external sources
+□ After search, wait 10s + scroll even if blank
+□ Try constructing entry URLs manually (e.g., /motif/card/EXAMPLE_ID)
+□ Navigate to constructed URLs 3+ times with different IDs
+□ Try all alternative browse links (Database, Entries, List, etc.)
+
+MINIMUM EFFORT REQUIRED:
+- 20+ steps attempting to load primary site
+- 10+ navigation attempts to different pages
+- 5+ attempts to verify each potential URI pattern
+
+Only mark EMPTY after exhausting ALL attempts above.
+
+WHEN YOU FIND AN EXAMPLE ID FROM EXTERNAL SOURCES:
+DO NOT immediately mark fields as EMPTY just because browse failed.
+Instead:
+1. Construct potential URI patterns based on site structure
+2. Try: /motif/$1, /entry/$1, /card/$1, /details/$1, /view/$1
+3. Navigate to each pattern with Example ID
+4. Test 3+ variations before giving up
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+VERIFICATION CHECKLIST
+
+□ Name: Official expansion found (not invented)
+□ Example: Extracted from entry URLs (base format)
+□ Pattern: Built from multiple IDs, supports full range
+□ URI_Format: Tested by navigating with 2+ IDs
+□ Contact_Orcid: Searched externally if not on site
+□ Persistence: 20+ steps on primary site before EMPTY
+□ All fields: Based on observed data only
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Return ONLY the 10 lines in exact format shown. No extra text, no JSON, no markdown formatting.""",
         llm_model="gpt-4o",
     )
 
@@ -245,8 +346,8 @@ Return ONLY these 10 lines in the exact format shown above. No extra text, no JS
 
     # Parse line by line
     extracted = {
-        'name': '', 'prefix': '', 'description': '', 'homepage': '', 'example': '',
-        'pattern': '', 'uri_format': '', 'contact_name': '', 'contact_email': '',
+        'name': '', 'prefix': '', 'description': '', 'example': '',
+        'pattern': '', 'uri_format': '', 'contact_name': '', 'contact_email': '', 'contact_orcid': '',
         'keywords': []
     }
 
@@ -267,8 +368,6 @@ Return ONLY these 10 lines in the exact format shown above. No extra text, no JS
             extracted['prefix'] = val.lower()  # Ensure lowercase
         elif label_norm == 'description':
             extracted['description'] = val
-        elif label_norm == 'homepage':
-            extracted['homepage'] = val
         elif label_norm == 'example':
             extracted['example'] = val
         elif label_norm == 'pattern':
@@ -280,6 +379,8 @@ Return ONLY these 10 lines in the exact format shown above. No extra text, no JS
             extracted['contact_name'] = val
         elif label_norm == 'contact_email':
             extracted['contact_email'] = val
+        elif label_norm == 'contact_orcid':
+            extracted['contact_orcid'] = val
         elif label_norm == 'keywords':
             # Parse comma-separated keywords
             extracted['keywords'] = [kw.strip() for kw in val.split(',') if kw.strip()][:3]
@@ -301,10 +402,9 @@ Return ONLY these 10 lines in the exact format shown above. No extra text, no JS
         elif re.match(r'^\d+$', example):
             digits = len(example)
             extracted['pattern'] = f"^\\d{{{digits}}}$"
-
-    # Use homepage_url as fallback
-    if not extracted['homepage']:
-        extracted['homepage'] = homepage_url
+            
+    # Use homepage_url directly, strip trailing slash
+    homepage = homepage_url.rstrip('/')
 
     # Derive prefix from name if not provided
     if not extracted['prefix'] and extracted['name']:
@@ -328,7 +428,7 @@ Return ONLY these 10 lines in the exact format shown above. No extra text, no JS
         "name": extracted['name'],
         "prefix": extracted['prefix'],
         "description": extracted['description'],
-        "homepage": extracted['homepage'],
+        "homepage": homepage,
         "example": extracted['example'],
         "pattern": extracted['pattern'],
         "uri_format": extracted['uri_format'],
@@ -336,7 +436,7 @@ Return ONLY these 10 lines in the exact format shown above. No extra text, no JS
         "contact": {
             "email": extracted['contact_email'],
             "name": extracted['contact_name'],
-            "orcid": ""
+            "orcid": extracted['contact_orcid']
         }
     }
 
