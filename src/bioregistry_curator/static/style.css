@@ -1,46 +1,366 @@
-:root{
+/* ============================================================================
+   CSS Variables
+   ============================================================================ */
+:root {
+  /* Layout */
   --max-width: 900px;
+
+  /* Colors */
   --accent: #2b7cff;
+  --accent-dark: #1a5dc9;
+  --background: #fff;
+  --border-light: #eee;
+  --border-medium: #ddd;
+  --border-dark: #d0e0e0;
+  --text-primary: #333;
+  --text-secondary: #666;
+  --text-muted: #888;
+  --success: #28a745;
+  --error: #dc3545;
+  --info-bg: #f0f7ff;
+  --info-border: #d0e4ff;
+  --item-bg: #f8f9fa;
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 6px;
+  --spacing-md: 8px;
+  --spacing-lg: 12px;
+  --spacing-xl: 14px;
+  --spacing-xxl: 20px;
+
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* Transitions */
+  --transition-fast: 0.2s ease;
 }
-body{font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin:0; padding:20px; display:flex; justify-content:center;}
-main{width:100%; max-width:var(--max-width);}
-h1{font-size:1.25rem; margin:0 0 12px 0}
-#input-area{background:#fff; padding:12px; border:1px solid #eee; border-radius:6px}
-label{display:block; margin-bottom:6px}
-input#pmid{width:100%; padding:8px; font-size:1rem; box-sizing:border-box}
-.buttons{margin-top:8px}
-button{background:var(--accent); color:#fff; border:0; padding:8px 12px; border-radius:4px; cursor:pointer}
-button.secondary{background:#888}
-.status{margin-top:8px; color:#333}
-.muted{color:#666; margin-left:10px}
-.hidden{display:none}
-#output-area{margin-top:14px}
-.output-controls{display:flex; align-items:center; gap:10px; margin-bottom:8px}
-textarea#json-output{width:100%; height:500px; font-family: 'Courier New', monospace; font-size:13px; padding:12px; box-sizing:border-box; border:1px solid #ddd; border-radius:6px; resize:vertical}
+/* ============================================================================
+   Base Styles
+   ============================================================================ */
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  margin: 0;
+  padding: var(--spacing-xxl);
+  display: flex;
+  justify-content: center;
+}
 
-/* Modal styles */
-.modal{position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; justify-content:center; align-items:center; z-index:1000}
-.modal.hidden{display:none}
-.modal-content{background:#fff; padding:24px 28px; border-radius:8px; width:100%; max-width:450px; box-shadow:0 4px 20px rgba(0,0,0,0.15)}
-.modal-content h2{margin:0 0 8px 0; font-size:1.3rem; color:#333}
-.modal-description{margin:0 0 20px 0; color:#666; font-size:0.9rem; line-height:1.4}
-.form-group{margin-bottom:16px}
-.form-group label{display:block; margin-bottom:6px; font-weight:500; color:#333}
-.form-group input{width:100%; padding:10px 12px; font-size:1rem; box-sizing:border-box; border:1px solid #ddd; border-radius:4px}
-.form-group input:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 2px rgba(43,124,255,0.1)}
-.form-group .hint{display:block; margin-top:4px; font-size:0.8rem; color:#888}
-.form-group .required{color:#e53935}
-.form-actions{margin-top:24px; display:flex; justify-content:flex-end}
-.form-actions button{padding:10px 20px; font-size:1rem}
+main {
+  width: 100%;
+  max-width: var(--max-width);
+}
 
-/* Contributor banner */
-#contributor-banner{background:#f0f7ff; padding:10px 14px; border-radius:6px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; border:1px solid #d0e4ff}
-#contributor-display{color:#333; font-size:0.9rem}
-#contributor-display strong{color:#1a5dc9}
-.link-btn{background:transparent; color:var(--accent); border:none; padding:4px 8px; cursor:pointer; font-size:0.85rem; text-decoration:underline}
-.link-btn:hover{color:#1a5dc9}
+h1 {
+  font-size: 1.25rem;
+  margin: 0 0 var(--spacing-lg) 0;
+}
 
-@media (max-width:600px){
-  textarea#json-output{height:420px}
-  .modal-content{margin:16px; padding:20px}
+label {
+  display: block;
+  margin-bottom: var(--spacing-sm);
+}
+
+.hidden {
+  display: none;
+}
+
+/* ============================================================================
+   Input Area
+   ============================================================================ */
+#input-area {
+  background: var(--background);
+  padding: var(--spacing-lg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+}
+
+input#pmid {
+  width: 100%;
+  padding: var(--spacing-md);
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+.buttons {
+  margin-top: var(--spacing-md);
+}
+
+button {
+  background: var(--accent);
+  color: var(--background);
+  border: 0;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+button.secondary {
+  background: var(--text-muted);
+}
+
+.status {
+  margin-top: var(--spacing-md);
+  color: var(--text-primary);
+}
+
+.muted {
+  color: var(--text-secondary);
+  margin-left: 10px;
+}
+
+/* ============================================================================
+   Output Area
+   ============================================================================ */
+#output-area {
+  margin-top: var(--spacing-xl);
+}
+
+.output-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: var(--spacing-md);
+}
+
+textarea#json-output {
+  width: 100%;
+  height: 500px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  padding: var(--spacing-lg);
+  box-sizing: border-box;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  resize: vertical;
+}
+
+/* ============================================================================
+   Modal Styles
+   ============================================================================ */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-content {
+  background: var(--background);
+  padding: 24px 28px;
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 450px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.modal-content h2 {
+  margin: 0 0 var(--spacing-md) 0;
+  font-size: 1.3rem;
+  color: var(--text-primary);
+}
+
+.modal-description {
+  margin: 0 0 var(--spacing-xxl) 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: var(--spacing-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.form-group input {
+  width: 100%;
+  padding: 10px var(--spacing-lg);
+  font-size: 1rem;
+  box-sizing: border-box;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(43, 124, 255, 0.1);
+}
+
+.form-group .hint {
+  display: block;
+  margin-top: var(--spacing-xs);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.form-group .required {
+  color: var(--error);
+}
+
+.form-actions {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.form-actions button {
+  padding: 10px var(--spacing-xxl);
+  font-size: 1rem;
+}
+
+/* ============================================================================
+   Contributor Banner
+   ============================================================================ */
+#contributor-banner {
+  background: var(--info-bg);
+  padding: 10px var(--spacing-xl);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-xl);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid var(--info-border);
+}
+
+#contributor-display {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+#contributor-display strong {
+  color: var(--accent-dark);
+}
+
+.link-btn {
+  background: transparent;
+  color: var(--accent);
+  border: none;
+  padding: var(--spacing-xs) var(--spacing-md);
+  cursor: pointer;
+  font-size: 0.85rem;
+  text-decoration: underline;
+}
+
+.link-btn:hover {
+  color: var(--accent-dark);
+}
+
+/* ============================================================================
+   PMID Rankings Section
+   ============================================================================ */
+#pmid-rankings-section {
+  background: var(--background);
+  padding: var(--spacing-xl);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-xl);
+}
+
+#pmid-rankings-section h2 {
+  font-size: 1.1rem;
+  margin: 0 0 10px 0;
+  color: var(--text-primary);
+}
+
+.rankings-status {
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+  padding: var(--spacing-sm) 0;
+}
+
+.rankings-status.loading {
+  color: var(--text-secondary);
+}
+
+.rankings-status.success {
+  color: var(--success);
+}
+
+.rankings-status.error {
+  color: var(--error);
+}
+
+.pmid-rankings-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--spacing-md);
+  max-height: 300px;
+  overflow-y: auto;
+  padding: var(--spacing-xs) 0;
+}
+
+.pmid-item {
+  display: flex;
+  flex-direction: column;
+  padding: var(--spacing-md) 10px;
+  background: var(--item-bg);
+  border: 1px solid var(--border-dark);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.pmid-item:hover {
+  background: #e8f4ff;
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.pmid-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-bottom: 2px;
+}
+
+.pmid-link:hover {
+  text-decoration: underline;
+}
+
+.pmid-info {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================================================
+   Responsive Design
+   ============================================================================ */
+@media (max-width: 600px) {
+  textarea#json-output {
+    height: 420px;
+  }
+
+  .modal-content {
+    margin: 16px;
+    padding: var(--spacing-xxl);
+  }
+
+  .pmid-rankings-list {
+    grid-template-columns: 1fr;
+    max-height: 250px;
+  }
 }

@@ -1,19 +1,93 @@
+"""
+Bioregistry Curation Automation - Flask Application
+
+This application provides automated extraction of database metadata from PubMed publications
+and web scraping of database homepages for bioregistry curation.
+"""
+
 from flask import Flask, request, jsonify, render_template
 import re
 import asyncio
 import logging
+from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
+import requests
+import csv
+from io import StringIO
+from datetime import datetime, timedelta
+from threading import Lock
 
-load_dotenv() 
+load_dotenv()
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
+# Constants
+CACHE_DURATION = timedelta(hours=1)
+TSV_URL = "https://raw.githubusercontent.com/biopragmatics/bioregistry/main/exports/analyses/paper_ranking/predictions.tsv"
+PUBMED_REQUEST_TIMEOUT = 10
+ORCID_PATTERN = r'^\d{4}-\d{4}-\d{4}-\d{4}$'
+PMID_PATTERN = r'\d+'
+URL_PATTERN = r"https?://[^\s\)\]]+"
 
-def extract_pubmed_metadata(pmid):
-    """Extract metadata for a PMID using INDRA's pubmed client.
+# Cache for PMID rankings data
+pmid_cache: Dict[str, Any] = {
+    'data': None,
+    'last_fetched': None,
+    'lock': Lock()
+}
 
-    Returns a dictionary with keys: title, doi, abstract, first_author, pmid, year, homepage (if found), description
+
+# Helper Functions
+
+def extract_year_from_pubdate(pubdate: str) -> Optional[int]:
+    """Extract year from publication date string."""
+    match = re.search(r"(19|20)\d{2}", pubdate)
+    return int(match.group(0)) if match else None
+
+
+def extract_first_author(authors: List[Any]) -> str:
+    """Extract first author name from authors list."""
+    if not authors:
+        return ""
+
+    if isinstance(authors[0], dict):
+        return authors[0].get("name") or authors[0].get("fullname") or ""
+    return str(authors[0])
+
+
+def extract_urls_from_text(text: str) -> List[str]:
+    """Extract and clean URLs from text."""
+    raw_urls = re.findall(URL_PATTERN, text)
+    # Clean trailing punctuation
+    return [re.sub(r"[\.,;:]+$", "", url) for url in raw_urls]
+
+
+def extract_keywords(item: Dict[str, Any]) -> List[str]:
+    """Extract keywords from PubMed metadata item."""
+    if not isinstance(item, dict):
+        return []
+
+    kw = item.get('keywords') or item.get('mesh_terms') or item.get('keyword') or item.get('subject')
+    if not kw:
+        return []
+
+    if isinstance(kw, (list, tuple)):
+        return [str(x).strip() for x in kw if x]
+
+    return [k.strip() for k in str(kw).split(',') if k.strip()]
+
+
+def extract_pubmed_metadata(pmid: str) -> Dict[str, Any]:
+    """
+    Extract metadata for a PMID using INDRA's pubmed client.
+
+    Args:
+        pmid: PubMed ID as a string
+
+    Returns:
+        Dictionary with keys: title, doi, abstract, first_author, pmid, year,
+        homepage (if found), keywords, or error key if extraction failed
     """
     try:
         from indra.literature.pubmed_client import get_metadata_for_ids
@@ -30,53 +104,36 @@ def extract_pubmed_metadata(pmid):
         return {"error": "No metadata returned from PubMed"}
 
     # raw is usually a dict keyed by pmid
-    item = None
-    if isinstance(raw, dict):
-        item = raw.get(str(pmid)) or list(raw.values())[0]
-    else:
-        item = raw
+    item = raw.get(str(pmid)) if isinstance(raw, dict) else raw
+    if not item and isinstance(raw, dict):
+        item = list(raw.values())[0]
 
+    # Extract basic metadata
     title = item.get("title") or ""
     doi = item.get("doi") or item.get("elocationid") or ""
     abstract = item.get("abstract") or ""
 
-    # first author
-    first_author = ""
+    # Extract first author
     authors = item.get("authors") or item.get("author_list") or []
-    if authors:
-        if isinstance(authors[0], dict):
-            first_author = authors[0].get("name") or authors[0].get("fullname") or ""
-        else:
-            first_author = str(authors[0])
+    first_author = extract_first_author(authors)
 
-    # year
+    # Extract year
     year = None
     if item.get("year"):
         try:
             year = int(item.get("year"))
-        except Exception:
+        except (ValueError, TypeError):
             year = None
     else:
         pubdate = item.get("pubdate") or ""
-        m = re.search(r"(19|20)\d{2}", pubdate)
-        if m:
-            year = int(m.group(0))
+        year = extract_year_from_pubdate(pubdate)
 
-    # find any URLs in the abstract; capture until whitespace or closing bracket
-    raw_urls = re.findall(r"https?://[^\s\)\]]+", abstract)
-    # clean trailing punctuation
-    urls = [re.sub(r"[\.,;:]+$", "", u) for u in raw_urls]
+    # Find homepage URLs in abstract
+    urls = extract_urls_from_text(abstract)
     homepage = urls[0] if urls else ""
 
-    # keywords: prefer INDRA-provided keywords when present
-    keywords = []
-    if isinstance(item, dict):
-        kw = item.get('keywords') or item.get('mesh_terms') or item.get('keyword') or item.get('subject')
-        if kw:
-            if isinstance(kw, (list, tuple)):
-                keywords = [str(x).strip() for x in kw if x]
-            else:
-                keywords = [k.strip() for k in str(kw).split(',') if k.strip()]
+    # Extract keywords
+    keywords = extract_keywords(item)
 
     return {
         "title": title,
@@ -90,14 +147,9 @@ def extract_pubmed_metadata(pmid):
     }
 
 
-async def extract_database_info(homepage_url):
-    """Use browser_use Agent to extract database information from homepage."""
-    from browser_use import Agent
-    
-    logging.info(f"Initializing browser agent for {homepage_url}")
-
-    agent = Agent(
-        task=rf"""Visit {homepage_url} and extract database information.
+# Browser scraping constants
+BROWSER_AGENT_MODEL = "gpt-4o"
+BROWSER_AGENT_PROMPT = r"""Visit {homepage_url} and extract database information.
 
 DO NOT USE REGISTRY SITES: Avoid bioregistry.io, biopragmatics.github.io, identifiers.org. Use primary sources only.
 
@@ -177,11 +229,11 @@ d) Build pattern supporting full range
 Example:
 - URLs: /browse/RCDDd001, /browse/RCDDd002, /browse/RCDDd003
 - Total entries: 1108
-- Pattern needs: ^RCDD[di]\d{1,4}$ (not \d{3})
+- Pattern needs: ^RCDD[di]\d{{1,4}}$ (not \d{{3}})
 
 Handle variable formats:
 - If seeing: /entry/7O1K_A AND /entry/3CIA_D308_D388
-- Pattern: ^[A-Z0-9]{4}_[A-Z](\d+_[A-Z]\d+)?$
+- Pattern: ^[A-Z0-9]{{4}}_[A-Z](\d+_[A-Z]\d+)?$
 
 No version patterns (\.\d or _v\d)
 
@@ -197,7 +249,7 @@ NEVER construct or guess URL patterns.
 METHOD:
 1. Navigate to Browse/Database → Wait 10s → Scroll
 2. When table loads, inspect for clickable links:
-   
+
    CHECK IN THIS ORDER:
    a) ID column: Look for <a> tags (will be indexed as clickable)
    b) Action columns: "View", "Details", "More", "Info" buttons
@@ -331,41 +383,46 @@ VERIFICATION CHECKLIST
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Return ONLY the 10 lines in exact format shown. No extra text, no JSON, no markdown formatting.""",
-        llm_model="gpt-4o",
-    )
+Return ONLY the 10 lines in exact format shown. No extra text, no JSON, no markdown formatting."""
 
-    logging.info("Running browser agent...")
-    result = await agent.run()
-    
-    logging.info("Browser agent completed, parsing results...")
-    final = result.final_result() if hasattr(result, 'final_result') else str(result)
 
+def parse_browser_agent_result(text: str) -> Dict[str, Any]:
+    """
+    Parse browser agent output text into structured data.
+
+    Args:
+        text: Raw text output from browser agent
+
+    Returns:
+        Dictionary with extracted fields
+    """
     # Replace escaped newlines with actual newlines
-    text = (final or "").replace('\\n', '\n')
+    text = (text or "").replace('\\n', '\n')
 
-    # Parse line by line
+    # Initialize result dictionary
     extracted = {
         'name': '', 'prefix': '', 'description': '', 'example': '',
-        'pattern': '', 'uri_format': '', 'contact_name': '', 'contact_email': '', 'contact_orcid': '',
-        'keywords': []
+        'pattern': '', 'uri_format': '', 'contact_name': '',
+        'contact_email': '', 'contact_orcid': '', 'keywords': []
     }
 
+    # Parse line by line
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     for ln in lines:
-        m = re.match(r"^\s*([^:]+)\s*:\s*(.*)$", ln)
-        if not m:
+        match = re.match(r"^\s*([^:]+)\s*:\s*(.*)$", ln)
+        if not match:
             continue
-        raw_label = m.group(1).strip()
-        val = m.group(2).strip()
-        
+
+        raw_label = match.group(1).strip()
+        val = match.group(2).strip()
+
         # Normalize label for matching
         label_norm = re.sub(r"[_\-\s]+", "_", raw_label).lower()
-        
+
         if label_norm == 'name':
             extracted['name'] = val
         elif label_norm == 'prefix':
-            extracted['prefix'] = val.lower()  # Ensure lowercase
+            extracted['prefix'] = val.lower()
         elif label_norm == 'description':
             extracted['description'] = val
         elif label_norm == 'example':
@@ -385,14 +442,35 @@ Return ONLY the 10 lines in exact format shown. No extra text, no JSON, no markd
             # Parse comma-separated keywords
             extracted['keywords'] = [kw.strip() for kw in val.split(',') if kw.strip()][:3]
 
-    # Post-processing: Try to extract email from contact name if email is empty
+    return extracted
+
+
+def post_process_extracted_data(extracted: Dict[str, Any], homepage_url: str) -> Dict[str, Any]:
+    """
+    Post-process extracted data to fill in missing fields and validate.
+
+    Args:
+        extracted: Raw extracted data from browser agent
+        homepage_url: Homepage URL of the database
+
+    Returns:
+        Processed and validated extracted data
+    """
+    # Extract email from contact name if email is empty
     if not extracted['contact_email'] and extracted['contact_name']:
-        email_match = re.search(r'([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})', extracted['contact_name'])
+        email_match = re.search(
+            r'([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})',
+            extracted['contact_name']
+        )
         if email_match:
             extracted['contact_email'] = email_match.group(1)
-            extracted['contact_name'] = re.sub(r'\s*[\(\[]?[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}[\)\]]?\s*', '', extracted['contact_name']).strip()
+            extracted['contact_name'] = re.sub(
+                r'\s*[\(\[]?[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}[\)\]]?\s*',
+                '',
+                extracted['contact_name']
+            ).strip()
 
-    # If pattern is empty but we have an example, try to infer pattern
+    # Infer pattern from example if pattern is empty
     if not extracted['pattern'] and extracted['example']:
         example = extracted['example']
         if re.match(r'^[A-Z]+\d+$', example):
@@ -402,7 +480,7 @@ Return ONLY the 10 lines in exact format shown. No extra text, no JSON, no markd
         elif re.match(r'^\d+$', example):
             digits = len(example)
             extracted['pattern'] = f"^\\d{{{digits}}}$"
-            
+
     # Use homepage_url directly, strip trailing slash
     homepage = homepage_url.rstrip('/')
 
@@ -422,7 +500,11 @@ Return ONLY the 10 lines in exact format shown. No extra text, no JSON, no markd
             logging.warning(f"⚠️  URI format has deep nesting: {uri}")
             logging.warning("   This may indicate a post-redirect URL. Check if a simpler URL exists.")
 
-    logging.info(f"Extracted - Name: {extracted['name']}, Prefix: {extracted['prefix']}, Keywords: {extracted['keywords']}")
+    logging.info(
+        f"Extracted - Name: {extracted['name']}, "
+        f"Prefix: {extracted['prefix']}, "
+        f"Keywords: {extracted['keywords']}"
+    )
 
     return {
         "name": extracted['name'],
@@ -441,24 +523,79 @@ Return ONLY the 10 lines in exact format shown. No extra text, no JSON, no markd
     }
 
 
-def format_bioregistry_json(pubmed, db, contributor=None):
-    """Format the final Bioregistry JSON output."""
+async def extract_database_info(homepage_url: str) -> Dict[str, Any]:
+    """
+    Use browser_use Agent to extract database information from homepage.
+
+    Args:
+        homepage_url: URL of the database homepage to scrape
+
+    Returns:
+        Dictionary containing extracted database metadata
+    """
+    from browser_use import Agent
+
+    logging.info(f"Initializing browser agent for {homepage_url}")
+    
+    task_prompt = BROWSER_AGENT_PROMPT.replace('{homepage_url}', homepage_url)
+
+    agent = Agent(
+        task=task_prompt,
+        llm_model=BROWSER_AGENT_MODEL,
+    )
+
+    logging.info("Running browser agent...")
+    result = await agent.run()
+
+    logging.info("Browser agent completed, parsing results...")
+    final = result.final_result() if hasattr(result, 'final_result') else str(result)
+
+    # Parse the result
+    extracted = parse_browser_agent_result(final)
+
+    # Post-process and validate
+    return post_process_extracted_data(extracted, homepage_url)
+
+
+def derive_name_from_homepage(homepage: str) -> str:
+    """Derive a database name from its homepage URL."""
+    match = re.search(r"https?://(?:www\.)?([^/\.]+)", homepage)
+    return match.group(1) if match else "database"
+
+
+def derive_prefix_from_name(name: str) -> str:
+    """Derive a database prefix from its name."""
+    # Remove version suffixes from name first
+    clean_name = re.sub(r"(?i)\s*(?:v|version)\s*\d+(?:\.\d+)*$", "", name).strip()
+    # Create prefix from clean name (alphanumeric only, lowercase)
+    prefix = re.sub(r"[^0-9a-zA-Z]+", "", clean_name).lower()
+    return prefix or "database_key"
+
+
+def format_bioregistry_json(pubmed: Optional[Dict[str, Any]], db: Optional[Dict[str, Any]], contributor: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Format the final Bioregistry JSON output.
+
+    Args:
+        pubmed: PubMed metadata dictionary
+        db: Database metadata from web scraping
+        contributor: Contributor information
+
+    Returns:
+        Formatted bioregistry JSON dictionary
+    """
     # Get name and prefix from db data
     name = (db.get("name") if db else "").strip()
     prefix = (db.get("prefix") if db else "").strip()
 
     # If no name, derive from homepage
     if not name:
-        homepage = (db.get("homepage") if db else "") or pubmed.get("homepage", "")
-        m = re.search(r"https?://(?:www\.)?([^/\.]+)", homepage)
-        name = m.group(1) if m else "database"
+        homepage = (db.get("homepage") if db else "") or (pubmed.get("homepage", "") if pubmed else "")
+        name = derive_name_from_homepage(homepage)
 
     # If no prefix, derive from name
     if not prefix:
-        # Remove version suffixes from name first
-        clean_name = re.sub(r"(?i)\s*(?:v|version)\s*\d+(?:\.\d+)*$", "", name).strip()
-        # Create prefix from clean name (alphanumeric only, lowercase)
-        prefix = re.sub(r"[^0-9a-zA-Z]+", "", clean_name).lower() or "database_key"
+        prefix = derive_prefix_from_name(name)
 
     # Use prefix as database key
     db_key = prefix
@@ -529,19 +666,133 @@ def format_bioregistry_json(pubmed, db, contributor=None):
     return out
 
 
+def is_cache_valid() -> bool:
+    """Check if the PMID cache is still valid."""
+    return (pmid_cache['data'] is not None and
+            pmid_cache['last_fetched'] is not None and
+            datetime.now() - pmid_cache['last_fetched'] < CACHE_DURATION)
+
+
+def fetch_pmid_rankings() -> List[Dict[str, Any]]:
+    """
+    Fetch and parse PMID rankings from GitHub TSV file with caching.
+
+    Returns:
+        List of dictionaries containing PMID ranking data
+
+    Raises:
+        requests.RequestException: If fetch fails and no cache is available
+        Exception: If parsing fails
+    """
+    with pmid_cache['lock']:
+        # Check if cache is valid
+        if is_cache_valid():
+            logging.info("Returning cached PMID rankings data")
+            return pmid_cache['data']
+
+        # Fetch new data
+        logging.info(f"Fetching PMID rankings from {TSV_URL}")
+        try:
+            response = requests.get(TSV_URL, timeout=PUBMED_REQUEST_TIMEOUT)
+            response.raise_for_status()
+
+            # Parse TSV data
+            tsv_content = response.text
+            reader = csv.DictReader(StringIO(tsv_content), delimiter='\t')
+            pmid_data = [dict(row) for row in reader]
+
+            # Update cache
+            pmid_cache['data'] = pmid_data
+            pmid_cache['last_fetched'] = datetime.now()
+
+            logging.info(f"Successfully fetched and cached {len(pmid_data)} PMID entries")
+            return pmid_data
+
+        except requests.RequestException as e:
+            logging.error(f"Failed to fetch PMID rankings: {e}")
+            # Return cached data if available, even if expired
+            if pmid_cache['data'] is not None:
+                logging.warning("Returning expired cache due to fetch failure")
+                return pmid_cache['data']
+            raise
+        except Exception as e:
+            logging.error(f"Error parsing PMID rankings: {e}")
+            raise
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
 
 
+@app.route('/pmid-rankings', methods=['GET'])
+def get_pmid_rankings():
+    """API endpoint to get PMID rankings data."""
+    try:
+        data = fetch_pmid_rankings()
+        return jsonify({
+            "status": "success",
+            "data": data,
+            "cached_at": pmid_cache['last_fetched'].isoformat() if pmid_cache['last_fetched'] else None
+        })
+    except Exception as e:
+        logging.exception('Failed to fetch PMID rankings')
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to fetch PMID rankings: {str(e)}"
+        }), 500
+
+
+def validate_pmid(pmid: str) -> bool:
+    """Validate PMID format."""
+    return bool(pmid and re.fullmatch(PMID_PATTERN, pmid))
+
+
+def validate_contributor(contributor: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+    """
+    Validate contributor data.
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not contributor:
+        return True, None
+
+    # Validate ORCID format if provided
+    orcid = contributor.get('orcid', '').strip()
+    if orcid and not re.fullmatch(ORCID_PATTERN, orcid):
+        return False, "Invalid ORCID format. Expected format: 0000-0000-0000-0000"
+
+    return True, None
+
+
 @app.route('/extract', methods=['POST'])
 def extract():
+    """
+    API endpoint to extract metadata for a given PMID.
+
+    Expects JSON with:
+        - pmid: PubMed ID (numeric string)
+        - contributor: Optional contributor information dict
+
+    Returns:
+        JSON with status and extracted data or error message
+    """
     data = request.get_json() or {}
     pmid = (data.get('pmid') or '').strip()
     contributor = data.get('contributor') or {}
 
-    if not pmid or not re.fullmatch(r"\d+", pmid):
-        return jsonify({"status": "error", "message": "Invalid PMID. Provide numeric PMID like 12345678."}), 400
+    # Validate PMID
+    if not validate_pmid(pmid):
+        return jsonify({
+            "status": "error",
+            "message": "Invalid PMID. Provide numeric PMID like 12345678."
+        }), 400
+
+    # Validate contributor data
+    is_valid, error_msg = validate_contributor(contributor)
+    if not is_valid:
+        return jsonify({"status": "error", "message": error_msg}), 400
 
     try:
         # Step 1: Extract PubMed metadata
