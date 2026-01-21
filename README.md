@@ -52,22 +52,16 @@ Provides an editable interface where curators can:
 
 ## Installation
 
-1. Clone the repository:
-```bash
-git clone https://github.com/kanghosaeyo/bioregistry-curation-automation.git
-cd bioregistry-curation-automation
-```
+Install directly from GitHub as follows
 
-2. Install the package in editable mode:
 ```bash
-pip install -e .
+pip install git+https://github.com/gyorilab/bioregistry-curation-automation.git
 ```
 
 ## Usage
 
 Run the Flask application:
 ```bash
-cd src
 python -m bioregistry_curator.app
 ```
 
